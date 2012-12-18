@@ -22,6 +22,7 @@ import socket
 import random
 from ansible.callbacks import vvv
 from ansible import errors
+from ansible import utils
 
 # prevent paramiko warning noise -- see http://stackoverflow.com/questions/3920502/
 HAVE_PARAMIKO=False
@@ -52,8 +53,11 @@ class Connection(object):
         if port is None:
             self.port = self.runner.remote_port
 
+    def _template_host_vars(self, string):
+        return utils.template(self.runner.basedir, string, self.runner.inventory.get_variables(self.host))
+
     def _cache_key(self):
-        return "%s__%s__" % (self.host, self.runner.remote_user)
+        return "%s__%s__" % (self.host, self._template_host_vars(self.runner.remote_user))
 
     def connect(self):
         cache_key = self._cache_key()
@@ -69,7 +73,7 @@ class Connection(object):
         if not HAVE_PARAMIKO:
             raise errors.AnsibleError("paramiko is not installed")
 
-        user = self.runner.remote_user
+        user = self._template_host_vars(self.runner.remote_user)
 
         vvv("ESTABLISH CONNECTION FOR USER: %s on PORT %s TO %s" % (user, self.port, self.host), host=self.host)
 
@@ -124,6 +128,7 @@ class Connection(object):
             # and pass the quoted string to the user's shell.  We loop reading
             # output until we see the randomly-generated sudo prompt set with
             # the -p option.
+            sudo_user = self._template_host_vars(sudo_user)
             randbits = ''.join(chr(random.randint(ord('a'), ord('z'))) for x in xrange(32))
             prompt = '[sudo via ansible, key=%s] password: ' % randbits
             sudocmd = 'sudo -k && sudo -p "%s" -u %s ' % (
@@ -169,7 +174,7 @@ class Connection(object):
             raise errors.AnsibleError("failed to transfer file to %s" % out_path)
 
     def _connect_sftp(self):
-        cache_key = "%s__%s__" % (self.host, self.runner.remote_user)
+        cache_key = self._cache_key()
         if cache_key in SFTP_CONNECTION_CACHE:
             return SFTP_CONNECTION_CACHE[cache_key]
         else:

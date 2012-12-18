@@ -26,6 +26,7 @@ import fcntl
 import ansible.constants as C
 from ansible.callbacks import vvv
 from ansible import errors
+from ansible import utils
 
 class Connection(object):
     ''' ssh based connections '''
@@ -35,10 +36,15 @@ class Connection(object):
         self.host = host
         self.port = port
 
+    def _template_host_vars(self, string):
+        return utils.template(self.runner.basedir, string, self.runner.inventory.get_variables(self.host))
+
     def connect(self):
         ''' connect to the remote host '''
 
-        vvv("ESTABLISH CONNECTION FOR USER: %s" % self.runner.remote_user, host=self.host)
+        user = self._template_host_vars(self.runner.remote_user)
+
+        vvv("ESTABLISH CONNECTION FOR USER: %s" % user, host=self.host)
 
         self.common_args = []
         extra_args = C.ANSIBLE_SSH_ARGS
@@ -59,7 +65,7 @@ class Connection(object):
         else:
             self.common_args += ["-o", "KbdInteractiveAuthentication=no",
                                  "-o", "PasswordAuthentication=no"]
-        self.common_args += ["-o", "User="+self.runner.remote_user]
+        self.common_args += ["-o", "User="+user]
 
         return self
 
@@ -100,6 +106,7 @@ class Connection(object):
             # and pass the quoted string to the user's shell.  We loop reading
             # output until we see the randomly-generated sudo prompt set with
             # the -p option.
+            sudo_user = self._template_host_vars(sudo_user)
             randbits = ''.join(chr(random.randint(ord('a'), ord('z'))) for x in xrange(32))
             prompt = '[sudo via ansible, key=%s] password: ' % randbits
             sudocmd = 'sudo -k && sudo -p "%s" -u %s ' % (
